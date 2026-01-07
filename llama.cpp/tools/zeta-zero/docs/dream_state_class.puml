@@ -1,0 +1,159 @@
+@startuml
+skinparam classAttributeIconSize 0
+
+package "Dream State Engine" {
+
+    enum zeta_system_state_t {
+        ZETA_STATE_AWAKE
+        ZETA_STATE_DREAMING
+        ZETA_STATE_LUCID
+    }
+
+    enum zeta_dream_outcome_t {
+        DREAM_PENDING
+        DREAM_ACCEPTED
+        DREAM_EDITED
+        DREAM_REJECTED
+    }
+
+    struct zeta_dream_config_t {
+        +idle_threshold_sec : int
+        +dream_temp : float
+        +dream_penalty_repeat : float
+        +max_dream_iterations : int
+        +max_dream_tokens : int
+        +compression_confidence : float
+        +dreams_dir : string
+        +plateau_threshold : int
+    }
+
+    struct ZetaDreamEntry {
+        +content : string
+        +original_content : string
+        +category : string
+        +timestamp : string
+        +confidence : float
+        +reviewed : bool
+        +outcome : zeta_dream_outcome_t
+        +dream_id : string
+    }
+
+    struct DreamCategoryStats {
+        +total : int
+        +accepted : int
+        +edited : int
+        +rejected : int
+        +acceptance_rate : float
+        +lucid_threshold : float
+    }
+
+    class DreamReviewStats {
+        -category_stats : map<string, DreamCategoryStats>
+        -stats_mutex : mutex
+        -stats_file : string
+        -DEFAULT_THRESHOLD : float
+        -MIN_THRESHOLD : float
+        -MAX_THRESHOLD : float
+        -ADJUSTMENT_RATE : float
+        +init(base_dir : string) : void
+        +get_threshold(category : string) : float
+        +record_outcome(category : string, outcome : zeta_dream_outcome_t) : void
+        -adjust_threshold(category : string, stats : DreamCategoryStats) : void
+        +get_stats_summary() : string
+        -save_stats() : void
+        -load_stats() : void
+    }
+
+    class DreamRepetitionTracker {
+        +max_theme_history : int
+        +repetition_threshold : int
+        +novelty_weight : float
+        +theme_decay_hours : int
+        -theme_history : map<string, ThemeEntry>
+        -recent_dream_hashes : vector<string>
+        -tracker_mutex : mutex
+        -extract_themes(content : string) : vector<string>
+        -content_hash(content : string) : string
+        +record_dream(content : string) : void
+        +calculate_novelty(content : string) : float
+        +is_too_repetitive(content : string, threshold : float) : bool
+        +get_avoidance_prompt() : string
+        +get_stats() : string
+        +clear() : void
+        -prune_old_themes() : void
+    }
+
+    class ThemeEntry {
+        +theme : string
+        +count : int
+        +last_seen : time_t
+    }
+
+    class ZetaDreamState {
+        -current_state : atomic<zeta_system_state_t>
+        -last_activity : atomic<time_t>
+        -dream_thread_running : atomic<bool>
+        -total_dreams : atomic<int>
+        -session_dreams : atomic<int>
+        -dream_thread : thread
+        -dream_mutex : mutex
+        -ctx : zeta_dual_ctx_t*
+        -config : zeta_dream_config_t
+        -generate_fn : function<string(string, int, float, float)>
+        -pending_dreams : vector<ZetaDreamEntry>
+        -dream_log : vector<DreamLogEntry>
+        +ZetaDreamState()
+        +init(dual_ctx : zeta_dual_ctx_t*, gen_fn : function) : void
+        +set_config(cfg : zeta_dream_config_t) : void
+        +wake() : void
+        +get_state() : zeta_system_state_t
+        +is_dreaming() : bool
+        +get_pending_count() : int
+        +get_session_dreams() : int
+        +get_morning_briefing() : string
+        +get_dream_details(index : int) : string
+        +process_review_command(cmd : string) : string
+        +complete_edit(index : int, edited_content : string) : string
+        +commit_dream_to_memory(dream : ZetaDreamEntry) : void
+        +clear_briefing() : void
+        +get_review_stats() : string
+        +scan_pending_dreams() : vector<ZetaDreamEntry>
+        +start_dream_thread() : void
+        +stop_dream_thread() : void
+        +log_dream_attempt(category : string, prompt : string, output : string, passed_lucid : bool, temp : float, iteration : int) : void
+        +analyze_dream_patterns() : string
+        +export_dream_log_json() : string
+        +save_pattern_analysis() : void
+        -should_dream() : bool
+        -ensure_directories() : void
+        -load_pending_dreams() : void
+        -run_dream_cycle() : void
+        -gather_recent_memories() : string
+        -perform_lucid_check(dream : ZetaDreamEntry) : bool
+        -save_dream_to_disk(dream : ZetaDreamEntry) : void
+        -archive_dream(dream : ZetaDreamEntry) : void
+    }
+
+    class DreamLogEntry {
+        +timestamp : time_t
+        +category : string
+        +prompt_context : string
+        +dream_output : string
+        +passed_lucid : bool
+        +generation_temp : float
+        +iteration : int
+    }
+
+    ZetaDreamEntry *-- zeta_dream_outcome_t
+    DreamReviewStats *-- DreamCategoryStats
+    DreamRepetitionTracker +-- ThemeEntry
+    ZetaDreamState +-- DreamLogEntry
+    ZetaDreamState *-- zeta_system_state_t
+    ZetaDreamState *-- zeta_dream_config_t
+    ZetaDreamState o-- ZetaDreamEntry
+    ZetaDreamState ..> DreamReviewStats : uses
+    ZetaDreamState ..> DreamRepetitionTracker : uses
+
+}
+
+@enduml

@@ -1,0 +1,76 @@
+@startuml
+skinparam sequenceMessageAlign center
+skinparam shadowing false
+
+actor User
+participant "Zeta Server" as SVR
+participant "ZetaDreamState" as DS
+participant "RepetitionTracker" as RT
+participant "llama.cpp (14B/7B)" as LLM
+participant "DreamReviewStats" as DRS
+database "Storage" as ST
+
+== Idle Detection & Dream Start ==
+
+User -> SVR: [Inactivity]
+SVR -> DS: should_dream()?
+DS -> DS: Check idle_threshold_sec
+note right: Default: 5s idle
+
+alt System Idle
+    DS -> DS: set_state(ZETA_STATE_DREAMING)
+    DS -> DS: run_dream_cycle()
+
+    loop max_dream_iterations
+        DS -> ST: gather_recent_memories()
+        ST --> DS: Context Nodes
+
+        DS -> RT: get_avoidance_prompt()
+        RT --> DS: List of overused themes
+
+        DS -> LLM: generate_fn(Prompt + Context + Avoidance, temp=0.9)
+        LLM --> DS: Synthesized Insight (Dream)
+
+        DS -> RT: calculate_novelty(Dream)
+        RT --> DS: Novelty Score
+
+        DS -> DS: perform_lucid_check(Dream)
+        note right: Self-validation via 7B Critic
+
+        alt Lucid Check Passed & Novel
+            DS -> DRS: get_threshold(Category)
+            DRS --> DS: Current Acceptance Threshold
+
+            DS -> ST: save_dream_to_disk(Pending)
+            ST --> DS: dream_id
+        else Rejected
+            DS -> DS: Log discard
+        end
+    end
+
+    DS -> DS: set_state(ZETA_STATE_AWAKE)
+end
+
+== Morning Briefing & Review ==
+
+User -> SVR: GET /v1/chat/completions (Next request)
+SVR -> DS: wake()
+DS -> DS: set_state(ZETA_STATE_AWAKE)
+
+SVR -> DS: get_morning_briefing()
+DS -> ST: scan_pending_dreams()
+ST --> DS: List of entries
+DS --> SVR: Briefing UI String
+SVR --> User: API Response + Briefing Insight
+
+User -> SVR: process_review_command("Y1")
+SVR -> DS: process_review_command("Y1")
+DS -> DRS: record_outcome(Category, DREAM_ACCEPTED)
+DRS -> DRS: adjust_threshold() (Target: 70% accuracy)
+DS -> DS: commit_dream_to_memory(Dream)
+DS -> ST: zeta_commit_fact(Fact Graph)
+DS -> ST: archive_dream(Dream)
+DS --> SVR: "✓ Accepted dream #1"
+SVR --> User: Review Confirmation
+
+@enduml
